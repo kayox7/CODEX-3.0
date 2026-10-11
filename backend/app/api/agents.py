@@ -1,6 +1,7 @@
 """Agent Passport Registry endpoints.
 Provides full CRUD, pause, resume, and kill switch operations.
 """
+import secrets
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.agent import (
@@ -35,15 +36,22 @@ def register_agent(
     req: AgentCreateRequest,
     user: dict = Depends(require_roles(["admin", "risk_lead"]))
 ):
-    """Register a new agent passport with scope limits, budget caps, and API key."""
-    existing = agent_service.get_agent_by_id(req.agent_id)
+    agent_id = req.agent_id
+    if not agent_id or not agent_id.strip():
+        slug = req.name.lower().strip().replace(" ", "_").replace("-", "_")
+        slug = "".join(c for c in slug if c.isalnum() or c == "_")
+        agent_id = slug or f"agent_{secrets.token_hex(4)}"
+
+    existing = agent_service.get_agent_by_id(agent_id)
     if existing:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Agent '{req.agent_id}' already exists")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Agent '{agent_id}' already exists")
+
+    owner = req.owner if (req.owner and req.owner.strip()) else user["username"]
 
     return agent_service.create_agent(
-        agent_id=req.agent_id,
+        agent_id=agent_id,
         name=req.name,
-        owner=req.owner or user["username"],
+        owner=owner,
         purpose=req.purpose,
         allowed_actions=req.allowed_actions,
         allowed_data_classes=req.allowed_data_classes,

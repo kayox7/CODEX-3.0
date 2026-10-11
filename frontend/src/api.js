@@ -29,6 +29,16 @@ export function setCurrentUser(user) {
   }
 }
 
+export class ApiError extends Error {
+  constructor(message, status, fieldErrors = {}, rawDetail = null) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.fieldErrors = fieldErrors || {};
+    this.detail = rawDetail;
+  }
+}
+
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
   const headers = {
@@ -54,7 +64,32 @@ async function request(endpoint, options = {}) {
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(errorData.detail || `Request failed with status ${res.status}`);
+    let message = `Request failed with status ${res.status}`;
+    const fieldErrors = {};
+
+    if (Array.isArray(errorData.detail)) {
+      const parts = errorData.detail.map(item => {
+        if (typeof item === 'object' && item !== null) {
+          const field = Array.isArray(item.loc) && item.loc.length > 0
+            ? String(item.loc[item.loc.length - 1])
+            : 'field';
+          const msg = item.msg ? item.msg.toLowerCase() : 'field required';
+          fieldErrors[field] = item.msg || 'Field required';
+          return `${field}: ${msg}`;
+        }
+        return String(item);
+      });
+      message = parts.join('; ');
+    } else if (typeof errorData.detail === 'string') {
+      message = errorData.detail;
+      if (message.toLowerCase().includes('reason')) {
+        fieldErrors['reason'] = message;
+      }
+    } else if (errorData.detail && typeof errorData.detail === 'object') {
+      message = JSON.stringify(errorData.detail);
+    }
+
+    throw new ApiError(message, res.status, fieldErrors, errorData.detail);
   }
 
   return res.json();
@@ -94,17 +129,21 @@ export const api = {
   },
 
   async pauseAgent(agentId, reason) {
-    return request(`/agents/${agentId}/pause`, {
+    const res = await request(`/agents/${agentId}/pause`, {
       method: 'POST',
       body: JSON.stringify({ reason: reason || 'Manual pause from console' })
     });
+    window.dispatchEvent(new CustomEvent('warden_data_changed'));
+    return res;
   },
 
   async resumeAgent(agentId, reason) {
-    return request(`/agents/${agentId}/resume`, {
+    const res = await request(`/agents/${agentId}/resume`, {
       method: 'POST',
       body: JSON.stringify({ reason: reason || 'Manual resume from console' })
     });
+    window.dispatchEvent(new CustomEvent('warden_data_changed'));
+    return res;
   },
 
   // Approvals
@@ -121,30 +160,63 @@ export const api = {
   },
 
   async approve(id, reason) {
-    return request(`/approvals/${id}/approve`, {
+    const res = await request(`/approvals/${id}/approve`, {
       method: 'POST',
       body: JSON.stringify({ reason })
     });
+    window.dispatchEvent(new CustomEvent('warden_data_changed'));
+    return res;
   },
 
   async reject(id, reason) {
-    return request(`/approvals/${id}/reject`, {
+    const res = await request(`/approvals/${id}/reject`, {
       method: 'POST',
       body: JSON.stringify({ reason })
     });
+    window.dispatchEvent(new CustomEvent('warden_data_changed'));
+    return res;
+  },
+
+  // System
+  async getHealth() {
+    return request('/health');
   },
 
   // Ledger
-  async getLedger(limit = 50, offset = 0) {
-    return request(`/ledger?limit=${limit}&offset=${offset}`);
+  async getLedger(params = 50, offset = 0) {
+    let p = {};
+    if (typeof params === 'number') {
+      p = { limit: params, offset: offset || 0 };
+    } else if (params && typeof params === 'object') {
+      p = { ...params };
+    }
+    const query = new URLSearchParams();
+    if (p.limit !== undefined) query.set('limit', p.limit);
+    if (p.offset !== undefined) query.set('offset', p.offset);
+    if (p.q) query.set('q', p.q);
+    if (p.event_type) query.set('event_type', p.event_type);
+    if (p.agent_id) query.set('agent_id', p.agent_id);
+    if (p.risk_level) query.set('risk_level', p.risk_level);
+    if (p.from) query.set('from', p.from);
+    if (p.to) query.set('to', p.to);
+    const qs = query.toString();
+    return request(`/v1/ledger${qs ? `?${qs}` : ''}`);
+  },
+
+  async getLedgerCount() {
+    return request('/v1/ledger/count');
+  },
+
+  async getLedgerProof(id) {
+    return request(`/v1/ledger/proof/${id}`);
   },
 
   async verifyLedger() {
-    return request('/ledger/verify');
+    return request('/v1/ledger/verify');
   },
 
   async tamperLedger(id, note) {
-    return request(`/ledger/_tamper/${id}`, {
+    return request(`/v1/ledger/_tamper/${id}`, {
       method: 'POST',
       body: JSON.stringify({ note: note || 'Simulated tamper test' })
     });

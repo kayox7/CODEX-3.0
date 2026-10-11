@@ -20,7 +20,7 @@ export default function Sidebar({ activeTab, onSelectTab, pendingApprovalsCount 
       badge: pendingApprovalsCount > 0 ? pendingApprovalsCount : null,
       badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/30'
     },
-    { id: 'ledger', label: 'Ledger Explorer', icon: FileCheck2 },
+    { id: 'ledger', label: 'Activity Logs', icon: FileCheck2 },
     { id: 'reports', label: 'Audit Reports', icon: FileSpreadsheet },
   ];
 

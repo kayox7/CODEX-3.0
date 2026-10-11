@@ -95,5 +95,30 @@ def init_db():
     )
     """)
 
+    # 5. Provider Connections table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS provider_connections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        encrypted_api_key TEXT NOT NULL,
+        key_last4 TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        system_prompt TEXT,
+        allowed_actions TEXT NOT NULL DEFAULT '[]',
+        allowed_data_classes TEXT NOT NULL DEFAULT '[]',
+        max_amount REAL NOT NULL DEFAULT 0.0,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_by TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_used_at TEXT,
+        last_test_status TEXT,
+        request_count INTEGER NOT NULL DEFAULT 0,
+        blocked_count INTEGER NOT NULL DEFAULT 0
+    )
+    """)
+
     conn.commit()
     conn.close()

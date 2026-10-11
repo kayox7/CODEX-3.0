@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_db
 from app.seed import seed_database
-from app.api import auth, agents, ledger, reports, actions, approvals
+from app.api import auth, agents, ledger, reports, actions, approvals, connections
 from app.services import approval_service
 
 async def periodic_sla_checker():
@@ -54,6 +54,7 @@ app.include_router(ledger.router)
 app.include_router(reports.router)
 app.include_router(actions.router)
 app.include_router(approvals.router)
+app.include_router(connections.router)
 
 @app.get("/")
 def root():
@@ -66,7 +67,8 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "environment": settings.ENVIRONMENT}
+    is_dev = settings.ENVIRONMENT.lower() in ("development", "dev", "local", "test")
+    return {"status": "ok", "environment": settings.ENVIRONMENT, "dev_mode": is_dev}
 
 if __name__ == "__main__":
     import uvicorn

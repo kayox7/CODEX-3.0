@@ -2,10 +2,10 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 class AgentCreateRequest(BaseModel):
-    agent_id: str
     name: str
-    owner: str
     purpose: str
+    agent_id: Optional[str] = None
+    owner: Optional[str] = None
     allowed_actions: List[str] = Field(default_factory=list)
     allowed_data_classes: List[str] = Field(default_factory=list)
     max_amount: float = 0.0

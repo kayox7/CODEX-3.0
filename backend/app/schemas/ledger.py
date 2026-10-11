@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
 class LedgerEntryResponse(BaseModel):
@@ -9,6 +9,28 @@ class LedgerEntryResponse(BaseModel):
     payload: Dict[str, Any]
     prev_hash: str
     hash: str
+
+class LedgerListResponse(BaseModel):
+    items: List[LedgerEntryResponse]
+    total: int
+    limit: int
+    offset: int
+
+class LedgerProofResponse(BaseModel):
+    id: int
+    timestamp: str
+    event_type: str
+    actor: str
+    prev_hash: str
+    hash: str
+    expected_prev_hash: str
+    is_link_valid: bool
+    is_hash_valid: bool
+    recomputed_hash: str
+    is_valid: bool
+    index: int
+    total_entries: int
+    message: str
 
 class LedgerVerifyResponse(BaseModel):
     valid: bool

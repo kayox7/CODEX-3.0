@@ -32,8 +32,12 @@ def get_approvals(
     params = []
 
     if status_filter:
-        conditions.append("status = ?")
-        params.append(status_filter)
+        s_clean = status_filter.strip().upper()
+        if s_clean in ("PENDING", "PENDING_APPROVAL"):
+            conditions.append("status = 'PENDING'")
+        else:
+            conditions.append("status = ?")
+            params.append(status_filter)
     if agent_id:
         conditions.append("agent_id = ?")
         params.append(agent_id)

@@ -60,30 +60,37 @@ function ApprovalCard({ approval, user, onAction }) {
   const [expanded, setExpanded] = useState(false);
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(null);
+  const [actionError, setActionError] = useState('');
 
   const canAct = user?.role !== 'auditor';
 
   const isPending = approval.status === 'PENDING_APPROVAL' || approval.status === 'ESCALATED';
 
   const handleApprove = async () => {
+    setActionError('');
     setLoading('approve');
     try {
       await api.approve(approval.id, reason || 'Approved from console');
       onAction();
     } catch (e) {
-      alert(e.message);
+      setActionError(e.message || 'Failed to approve request');
     } finally {
       setLoading(null);
     }
   };
 
   const handleReject = async () => {
+    setActionError('');
+    if (!reason.trim()) {
+      setActionError('Rejection reason is required');
+      return;
+    }
     setLoading('reject');
     try {
-      await api.reject(approval.id, reason || 'Rejected from console');
+      await api.reject(approval.id, reason.trim());
       onAction();
     } catch (e) {
-      alert(e.message);
+      setActionError(e.message || 'Failed to reject request');
     } finally {
       setLoading(null);
     }
@@ -159,13 +166,26 @@ function ApprovalCard({ approval, user, onAction }) {
       {/* Action bar for pending */}
       {isPending && canAct && (
         <div className="px-5 pb-5 space-y-2">
-          <input
-            type="text"
-            placeholder="Reason for decision..."
-            value={reason}
-            onChange={e => setReason(e.target.value)}
-            className="w-full text-xs bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-slate-600"
-          />
+          <div>
+            <input
+              type="text"
+              placeholder="Reason for decision..."
+              value={reason}
+              onChange={e => {
+                setReason(e.target.value);
+                setActionError('');
+              }}
+              className={`w-full text-xs bg-slate-900 border rounded-lg px-3 py-2 text-slate-300 placeholder-slate-600 focus:outline-none transition ${
+                actionError ? 'border-rose-500' : 'border-slate-700 focus:border-slate-500'
+              }`}
+            />
+            {actionError && (
+              <p className="text-[11px] text-rose-400 mt-1 flex items-center space-x-1 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{actionError}</span>
+              </p>
+            )}
+          </div>
           <div className="flex space-x-2">
             <button
               id={`reject-${approval.id}`}

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port 5173 --host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test src/dashboard_counters.test.js"
   },
   "dependencies": {
     "lucide-react": "^1.16.0",

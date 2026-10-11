@@ -44,4 +44,8 @@ class Settings(BaseModel):
     GEMINI_API_KEY: str | None = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
     ANTHROPIC_API_KEY: str | None = Field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
 
+    # Connected AI Agents Key Encryption & Security
+    KEY_ENCRYPTION_SECRET: str | None = Field(default_factory=lambda: os.getenv("KEY_ENCRYPTION_SECRET"))
+    ALLOW_LOCAL_UPSTREAMS: bool = Field(default_factory=lambda: os.getenv("ALLOW_LOCAL_UPSTREAMS", "false").lower() in ("true", "1", "yes"))
+
 settings = Settings()

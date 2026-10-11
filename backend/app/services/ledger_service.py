@@ -60,14 +60,97 @@ def append_ledger_entry(
         "hash": entry_hash
     }
 
-def get_ledger_entries(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-    """Retrieve ledger entries ordered by id descending."""
+def get_ledger_entries(
+    limit: int = 100,
+    offset: int = 0,
+    q: Optional[str] = None,
+    event_type: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    risk_level: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    return_total: bool = False
+) -> Any:
+    """Retrieve ledger entries ordered by id descending with optional filtering."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, timestamp, event_type, actor, payload, prev_hash, hash FROM ledger_entries ORDER BY id DESC LIMIT ? OFFSET ?",
-        (limit, offset)
-    )
+
+    conditions = []
+    params = []
+
+    if from_date:
+        conditions.append("timestamp >= ?")
+        params.append(from_date)
+
+    if to_date:
+        conditions.append("timestamp <= ?")
+        params.append(to_date)
+
+    if agent_id:
+        conditions.append("(actor = ? OR payload LIKE ? OR payload LIKE ?)")
+        params.extend([agent_id, f'%"agent_id":"{agent_id}"%', f'%"agent_id": "{agent_id}"%'])
+
+    if risk_level:
+        conditions.append("(payload LIKE ? OR payload LIKE ? OR payload LIKE ? OR payload LIKE ?)")
+        params.extend([
+            f'%"risk_level":"{risk_level}"%',
+            f'%"risk_level": "{risk_level}"%',
+            f'%"risk_level":"{risk_level.upper()}"%',
+            f'%"risk_level": "{risk_level.upper()}"%'
+        ])
+
+    if event_type:
+        raw_types = [t.strip() for t in event_type.split(",") if t.strip()]
+        type_clauses = []
+        for t in raw_types:
+            tu = t.upper()
+            if tu == "ALLOW":
+                type_clauses.append("(event_type IN ('ACTION_ALLOWED', 'ACTION_APPROVED') OR payload LIKE '%\"decision\":\"ALLOW\"%' OR payload LIKE '%\"status\":\"ALLOWED\"%')")
+            elif tu == "PENDING_APPROVAL":
+                type_clauses.append("(event_type = 'APPROVAL_REQUESTED' OR payload LIKE '%\"decision\":\"PENDING_APPROVAL\"%')")
+            elif tu == "BLOCKED":
+                type_clauses.append("(event_type IN ('ACTION_BLOCKED', 'ACTION_REJECTED') OR payload LIKE '%\"decision\":\"BLOCKED\"%' OR payload LIKE '%\"decision\":\"DENY\"%')")
+            elif tu == "HUMAN_ONLY":
+                type_clauses.append("(payload LIKE '%\"decision\":\"HUMAN_ONLY\"%' OR payload LIKE '%\"risk_level\":\"RESTRICTED\"%')")
+            elif tu == "APPROVED":
+                type_clauses.append("event_type = 'ACTION_APPROVED'")
+            elif tu == "REJECTED":
+                type_clauses.append("event_type = 'ACTION_REJECTED'")
+            elif tu == "ESCALATED":
+                type_clauses.append("event_type = 'APPROVAL_ESCALATED'")
+            elif tu == "TIMEOUT":
+                type_clauses.append("event_type = 'APPROVAL_TIMEOUT'")
+            elif tu == "KILL_SWITCH":
+                type_clauses.append("(event_type = 'KILL_SWITCH_TRIGGERED' OR payload LIKE '%\"kill_switch_activated\":true%' OR payload LIKE '%\"kill_switch_activated\": true%')")
+            else:
+                type_clauses.append("event_type = ?")
+                params.append(t)
+        if type_clauses:
+            conditions.append(f"({' OR '.join(type_clauses)})")
+
+    if q:
+        q_clean = q.strip()
+        q_param = f"%{q_clean}%"
+        q_clauses = ["actor LIKE ?", "event_type LIKE ?", "payload LIKE ?", "hash LIKE ?", "prev_hash LIKE ?"]
+        q_params = [q_param, q_param, q_param, q_param, q_param]
+        if q_clean.isdigit():
+            q_clauses.append("id = ?")
+            q_params.append(int(q_clean))
+        conditions.append(f"({' OR '.join(q_clauses)})")
+        params.extend(q_params)
+
+    where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    # Get total count
+    cursor.execute(f"SELECT count(*) as count FROM ledger_entries{where_clause}", params)
+    total = cursor.fetchone()["count"]
+
+    # Query entries
+    query = f"SELECT id, timestamp, event_type, actor, payload, prev_hash, hash FROM ledger_entries{where_clause} ORDER BY id DESC LIMIT ? OFFSET ?"
+    query_params = list(params)
+    query_params.extend([limit, offset])
+
+    cursor.execute(query, query_params)
     rows = cursor.fetchall()
     conn.close()
 
@@ -82,7 +165,69 @@ def get_ledger_entries(limit: int = 100, offset: int = 0) -> List[Dict[str, Any]
             "prev_hash": row["prev_hash"],
             "hash": row["hash"]
         })
+
+    if return_total:
+        return entries, total
     return entries
+
+def get_entry_proof(entry_id: int) -> Optional[Dict[str, Any]]:
+    """Verify cryptographic link and hash for a single entry."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, timestamp, event_type, actor, payload, prev_hash, hash FROM ledger_entries ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return None
+
+    target_idx = None
+    target_row = None
+    expected_prev_hash = GENESIS_HASH
+
+    for idx, row in enumerate(rows):
+        if row["id"] == entry_id:
+            target_idx = idx
+            target_row = row
+            break
+        expected_prev_hash = row["hash"]
+
+    if target_row is None:
+        return None
+
+    payload = json.loads(target_row["payload"])
+    actual_prev_hash = target_row["prev_hash"]
+    actual_hash = target_row["hash"]
+    ts = target_row["timestamp"]
+
+    recomputed = compute_entry_hash(actual_prev_hash, payload, ts)
+    is_link_valid = (actual_prev_hash == expected_prev_hash)
+    is_hash_valid = (recomputed == actual_hash)
+    is_valid = is_link_valid and is_hash_valid
+
+    if is_valid:
+        message = f"Entry #{entry_id} (block index {target_idx}) is cryptographically valid and linked to previous entry."
+    elif not is_link_valid:
+        message = f"Link broken: prev_hash '{actual_prev_hash[:12]}...' does not match prior block hash '{expected_prev_hash[:12]}...'."
+    else:
+        message = f"Tampering detected: Stored hash '{actual_hash[:12]}...' does not match recomputed SHA-256."
+
+    return {
+        "id": target_row["id"],
+        "timestamp": target_row["timestamp"],
+        "event_type": target_row["event_type"],
+        "actor": target_row["actor"],
+        "prev_hash": actual_prev_hash,
+        "hash": actual_hash,
+        "expected_prev_hash": expected_prev_hash,
+        "is_link_valid": is_link_valid,
+        "is_hash_valid": is_hash_valid,
+        "recomputed_hash": recomputed,
+        "is_valid": is_valid,
+        "index": target_idx,
+        "total_entries": len(rows),
+        "message": message
+    }
 
 def verify_ledger_chain() -> Dict[str, Any]:
     """

@@ -5,25 +5,42 @@ import { ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('demo123');
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [generalError, setGeneralError] = useState('');
   const [loading, setLoading] = useState(false);
 
   const demoRoles = [
     { label: 'Admin', username: 'admin', color: 'text-sky-400' },
-    { label: 'Risk Officer', username: 'risk_officer', color: 'text-amber-400' },
-    { label: 'Auditor', username: 'auditor', color: 'text-emerald-400' },
+    { label: 'Risk Lead', username: 'risklead', color: 'text-amber-400' },
+    { label: 'Approver', username: 'approver', color: 'text-emerald-400' },
+    { label: 'Executive', username: 'exec', color: 'text-purple-400' },
+    { label: 'Auditor', username: 'auditor', color: 'text-sky-300' },
   ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setGeneralError('');
+    setFieldErrors({});
+
+    const errors = {};
+    if (!username.trim()) errors.username = 'Username is required';
+    if (!password) errors.password = 'Password is required';
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
     setLoading(true);
     try {
       const data = await api.login(username, password);
       setCurrentUser(data.user);
       onLogin(data.user);
     } catch (err) {
-      setError(err.message || 'Login failed');
+      if (err.fieldErrors && Object.keys(err.fieldErrors).length > 0) {
+        setFieldErrors(err.fieldErrors);
+      } else {
+        setGeneralError(err.message || 'Login failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -59,11 +76,21 @@ export default function Login({ onLogin }) {
                 id="login-username"
                 type="text"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                onChange={e => {
+                  setUsername(e.target.value);
+                  if (fieldErrors.username) setFieldErrors(prev => ({ ...prev, username: null }));
+                }}
+                className={`w-full bg-slate-900 border rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none transition ${
+                  fieldErrors.username ? 'border-rose-500' : 'border-slate-700 focus:border-sky-500'
+                }`}
                 placeholder="username"
-                required
               />
+              {fieldErrors.username && (
+                <p className="text-xs text-rose-400 mt-1 flex items-center space-x-1 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{fieldErrors.username}</span>
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -73,17 +100,27 @@ export default function Login({ onLogin }) {
                 id="login-password"
                 type="password"
                 value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                onChange={e => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors(prev => ({ ...prev, password: null }));
+                }}
+                className={`w-full bg-slate-900 border rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none transition ${
+                  fieldErrors.password ? 'border-rose-500' : 'border-slate-700 focus:border-sky-500'
+                }`}
                 placeholder="••••••••"
-                required
               />
+              {fieldErrors.password && (
+                <p className="text-xs text-rose-400 mt-1 flex items-center space-x-1 font-medium">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{fieldErrors.password}</span>
+                </p>
+              )}
             </div>
 
-            {error && (
+            {generalError && (
               <div className="flex items-center space-x-2 text-rose-400 text-sm bg-rose-500/10 border border-rose-500/20 rounded-lg px-3 py-2.5">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{error}</span>
+                <span>{generalError}</span>
               </div>
             )}
 
