@@ -1,0 +1,67 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: warden_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: warden
+      POSTGRES_PASSWORD: warden_password
+      POSTGRES_DB: warden
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warden -d warden"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  opa:
+    image: openpolicyagent/opa:0.68.0-static
+    container_name: warden_opa
+    restart: unless-stopped
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./policies:/policies:ro
+    command:
+      - "run"
+      - "--server"
+      - "--log-level=info"
+      - "/policies/warden.rego"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: warden_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://warden:warden_password@db:5432/warden
+      OPA_URL: http://opa:8181/v1/data/warden
+      OPA_FALLBACK_ENABLED: "true"
+      JWT_SECRET: warden_super_secret_demo_key_2026_change_in_prod
+      DEFAULT_APPROVAL_SLA_SECONDS: "120"
+      ESCALATION_CHECK_INTERVAL_SECONDS: "5"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      opa:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: warden_frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
